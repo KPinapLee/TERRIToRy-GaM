@@ -1,0 +1,460 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Territory Conquest</title>
+    <style>
+        body {
+            font-family: Arial, sans-serif;
+            text-align: center;
+            margin: 0;
+            padding: 20px;
+            background-color: #f0f0f0;
+        }
+        
+        h1 {
+            color: #333;
+            margin-bottom: 5px;
+        }
+        
+        .instructions {
+            margin-bottom: 15px;
+            color: #555;
+        }
+        
+        .game-container {
+            display: inline-block;
+            margin: 10px auto;
+        }
+        
+        .grid {
+            display: grid;
+            grid-template-columns: repeat(20, 20px);
+            grid-template-rows: repeat(20, 20px);
+            gap: 1px;
+            background-color: #ddd;
+            border: 2px solid #333;
+        }
+        
+        .cell {
+            width: 20px;
+            height: 20px;
+            background-color: #fff;
+            cursor: pointer;
+            transition: background-color 0.1s;
+            position: relative;
+        }
+        
+        .cell.player {
+            background-color: #4CAF50;
+        }
+        
+        .cell.enemy1 {
+            background-color: #F44336;
+        }
+        
+        .cell.enemy2 {
+            background-color: #9C27B0;
+        }
+        
+        .cell.enemy3 {
+            background-color: #FF9800;
+        }
+        
+        .cell.claiming {
+            opacity: 0.7;
+            animation: pulse 0.2s infinite;
+        }
+        
+        @keyframes pulse {
+            0% { transform: scale(1); }
+            50% { transform: scale(1.1); }
+            100% { transform: scale(1); }
+        }
+        
+        .stats {
+            margin-top: 15px;
+            display: flex;
+            justify-content: space-around;
+            max-width: 400px;
+            margin-left: auto;
+            margin-right: auto;
+            flex-wrap: wrap;
+        }
+        
+        .stat {
+            padding: 8px 12px;
+            border-radius: 5px;
+            color: white;
+            font-weight: bold;
+            margin: 5px;
+            min-width: 80px;
+        }
+        
+        .player-stat {
+            background-color: #4CAF50;
+        }
+        
+        .enemy1-stat {
+            background-color: #F44336;
+        }
+        
+        .enemy2-stat {
+            background-color: #9C27B0;
+        }
+        
+        .enemy3-stat {
+            background-color: #FF9800;
+        }
+        
+        .game-over {
+            display: none;
+            position: fixed;
+            top: 0;
+            left: 0;
+            width: 100%;
+            height: 100%;
+            background-color: rgba(0, 0, 0, 0.9);
+            color: white;
+            flex-direction: column;
+            justify-content: center;
+            align-items: center;
+            font-size: 1.5em;
+            z-index: 100;
+        }
+        
+        .game-over h2 {
+            margin-bottom: 10px;
+            font-size: 2em;
+        }
+        
+        .game-over button {
+            margin-top: 20px;
+            padding: 10px 20px;
+            font-size: 1em;
+            background-color: #4CAF50;
+            color: white;
+            border: none;
+            border-radius: 5px;
+            cursor: pointer;
+            transition: background-color 0.3s;
+        }
+        
+        .game-over button:hover {
+            background-color: #45a049;
+        }
+        
+        .flag {
+            position: absolute;
+            top: 50%;
+            left: 50%;
+            transform: translate(-50%, -50%);
+            font-size: 12px;
+            z-index: 1;
+        }
+        
+        .highlight {
+            box-shadow: 0 0 5px 2px rgba(255, 255, 0, 0.7);
+        }
+    </style>
+</head>
+<body>
+    <h1>Territory Conquest</h1>
+    <div class="instructions">Hold adjacent squares to claim them (0.2s). Capture enemy flags!</div>
+    
+    <div class="game-container">
+        <div class="grid" id="grid"></div>
+    </div>
+    
+    <div class="stats">
+        <div class="stat player-stat" id="player-stat">Player: 0</div>
+        <div class="stat enemy1-stat" id="enemy1-stat">Enemy 1: 0</div>
+        <div class="stat enemy2-stat" id="enemy2-stat">Enemy 2: 0</div>
+        <div class="stat enemy3-stat" id="enemy3-stat">Enemy 3: 0</div>
+    </div>
+    
+    <div class="game-over" id="game-over">
+        <h2>Game Over!</h2>
+        <p id="winner-text"></p>
+        <button id="restart-btn">Play Again</button>
+    </div>
+    
+    <script>
+        const gridSize = 20;
+        const claimTime = 200; // 0.2 seconds
+        const enemyMoveInterval = 800; // 0.8 seconds
+        
+        let grid = [];
+        let playerTerritory = 0;
+        let enemy1Territory = 0;
+        let enemy2Territory = 0;
+        let enemy3Territory = 0;
+        let gameOver = false;
+        
+        // Spawn points
+        const spawnPoints = {
+            player: {x: Math.floor(gridSize / 2), y: Math.floor(gridSize / 2)},
+            enemy1: {x: 2, y: 2},
+            enemy2: {x: 2, y: gridSize - 3},
+            enemy3: {x: gridSize - 3, y: 2}
+        };
+        
+        function initializeGrid() {
+            const gridElement = document.getElementById('grid');
+            gridElement.innerHTML = '';
+            grid = [];
+            
+            for (let y = 0; y < gridSize; y++) {
+                grid[y] = [];
+                for (let x = 0; x < gridSize; x++) {
+                    grid[y][x] = {
+                        owner: null,
+                        element: document.createElement('div'),
+                        isSpawn: false,
+                        flag: null,
+                        claiming: null,
+                        claimStart: 0
+                    };
+                    
+                    grid[y][x].element.className = 'cell';
+                    grid[y][x].element.dataset.x = x;
+                    grid[y][x].element.dataset.y = y;
+                    
+                    grid[y][x].element.addEventListener('mousedown', startClaiming);
+                    grid[y][x].element.addEventListener('mouseup', stopClaiming);
+                    grid[y][x].element.addEventListener('mouseleave', stopClaiming);
+                    
+                    gridElement.appendChild(grid[y][x].element);
+                }
+            }
+            
+            initializeSpawn('player');
+            initializeSpawn('enemy1');
+            initializeSpawn('enemy2');
+            initializeSpawn('enemy3');
+            
+            setInterval(enemyMove, enemyMoveInterval);
+            updateStats();
+        }
+        
+        function initializeSpawn(owner) {
+            const {x, y} = spawnPoints[owner];
+            const cell = grid[y][x];
+            cell.owner = owner;
+            cell.isSpawn = true;
+            cell.element.classList.add(owner, 'highlight');
+            
+            const flag = document.createElement('div');
+            flag.className = 'flag';
+            flag.innerHTML = '⚑';
+            cell.element.appendChild(flag);
+            cell.flag = flag;
+            
+            if (owner === 'player') playerTerritory++;
+            else if (owner === 'enemy1') enemy1Territory++;
+            else if (owner === 'enemy2') enemy2Territory++;
+            else if (owner === 'enemy3') enemy3Territory++;
+        }
+        
+        function startClaiming(e) {
+            if (gameOver) return;
+            
+            const x = parseInt(e.target.dataset.x);
+            const y = parseInt(e.target.dataset.y);
+            const cell = grid[y][x];
+            
+            if (cell.owner !== 'player' && isAdjacentToPlayer(x, y)) {
+                cell.claiming = 'player';
+                cell.claimStart = Date.now();
+                cell.element.classList.add('claiming');
+                
+                setTimeout(() => {
+                    if (cell.claiming === 'player' && Date.now() - cell.claimStart >= claimTime) {
+                        claimCell(x, y, 'player');
+                    }
+                }, claimTime);
+            }
+        }
+        
+        function stopClaiming(e) {
+            const x = parseInt(e.target.dataset.x);
+            const y = parseInt(e.target.dataset.y);
+            const cell = grid[y][x];
+            
+            if (cell.claiming === 'player') {
+                cell.claiming = null;
+                cell.element.classList.remove('claiming');
+            }
+        }
+        
+        function isAdjacentToPlayer(x, y) {
+            const directions = [
+                [-1, 0], [1, 0], [0, -1], [0, 1],
+                [-1, -1], [-1, 1], [1, -1], [1, 1]
+            ];
+            
+            return directions.some(([dx, dy]) => {
+                const nx = x + dx;
+                const ny = y + dy;
+                return nx >= 0 && nx < gridSize && ny >= 0 && ny < gridSize && 
+                       grid[ny][nx].owner === 'player';
+            });
+        }
+        
+        function claimCell(x, y, owner) {
+            const cell = grid[y][x];
+            if (cell.owner === owner) return;
+            
+            if (cell.isSpawn && owner === 'player') {
+                const enemyType = cell.owner;
+                convertAllTerritory(enemyType, 'player');
+                captureSpawn(x, y);
+                return;
+            }
+            
+            updateCellOwnership(cell, owner);
+            checkVictoryConditions();
+        }
+        
+        function captureSpawn(x, y) {
+            const cell = grid[y][x];
+            cell.flag.remove();
+            cell.isSpawn = false;
+            cell.element.classList.remove('highlight');
+            updateCellOwnership(cell, 'player');
+            
+            setTimeout(() => {
+                checkVictoryConditions();
+                updateStats();
+            }, 100);
+        }
+        
+        function updateCellOwnership(cell, newOwner) {
+            const oldOwner = cell.owner;
+            
+            if (oldOwner === 'player') playerTerritory--;
+            else if (oldOwner === 'enemy1') enemy1Territory--;
+            else if (oldOwner === 'enemy2') enemy2Territory--;
+            else if (oldOwner === 'enemy3') enemy3Territory--;
+            
+            cell.owner = newOwner;
+            cell.element.className = `cell ${newOwner}`;
+            
+            if (newOwner === 'player') playerTerritory++;
+            else if (newOwner === 'enemy1') enemy1Territory++;
+            else if (newOwner === 'enemy2') enemy2Territory++;
+            else if (newOwner === 'enemy3') enemy3Territory++;
+        }
+        
+        function convertAllTerritory(fromOwner, toOwner) {
+            for (let y = 0; y < gridSize; y++) {
+                for (let x = 0; x < gridSize; x++) {
+                    const cell = grid[y][x];
+                    if (cell.owner === fromOwner && !cell.isSpawn) {
+                        updateCellOwnership(cell, toOwner);
+                    }
+                }
+            }
+        }
+        
+        function checkVictoryConditions() {
+            if (gameOver) return;
+            
+            const activeEnemies = [
+                {territory: enemy1Territory, spawn: spawnPoints.enemy1},
+                {territory: enemy2Territory, spawn: spawnPoints.enemy2},
+                {territory: enemy3Territory, spawn: spawnPoints.enemy3}
+            ].filter(enemy => {
+                const spawnCell = grid[enemy.spawn.y][enemy.spawn.x];
+                return enemy.territory > 0 || spawnCell.owner === enemy.spawn.type;
+            }).length;
+
+            if (playerTerritory === 0) {
+                endGame(false);
+            } else if (activeEnemies === 0) {
+                setTimeout(() => endGame(true), 100);
+            } else if (playerTerritory + enemy1Territory + enemy2Territory + enemy3Territory === gridSize * gridSize) {
+                const maxEnemy = Math.max(enemy1Territory, enemy2Territory, enemy3Territory);
+                endGame(playerTerritory > maxEnemy);
+            }
+        }
+        
+        function enemyMove() {
+            if (gameOver) return;
+            
+            [enemy1Territory, enemy2Territory, enemy3Territory].forEach((count, index) => {
+                if (count > 0) expandEnemy(`enemy${index + 1}`);
+            });
+        }
+        
+        function expandEnemy(enemyType) {
+            const expandableCells = [];
+            
+            for (let y = 0; y < gridSize; y++) {
+                for (let x = 0; x < gridSize; x++) {
+                    const cell = grid[y][x];
+                    if (cell.owner !== enemyType && isAdjacentTo(x, y, enemyType)) {
+                        if (!(cell.isSpawn && cell.owner === 'player')) {
+                            expandableCells.push({x, y});
+                        }
+                    }
+                }
+            }
+            
+            if (expandableCells.length > 0) {
+                const {x, y} = expandableCells[Math.floor(Math.random() * expandableCells.length)];
+                claimCell(x, y, enemyType);
+            }
+        }
+        
+        function isAdjacentTo(x, y, owner) {
+            const directions = [
+                [-1, 0], [1, 0], [0, -1], [0, 1],
+                [-1, -1], [-1, 1], [1, -1], [1, 1]
+            ];
+            
+            return directions.some(([dx, dy]) => {
+                const nx = x + dx;
+                const ny = y + dy;
+                return nx >= 0 && nx < gridSize && ny >= 0 && ny < gridSize && 
+                       grid[ny][nx].owner === owner;
+            });
+        }
+        
+        function updateStats() {
+            document.getElementById('player-stat').textContent = `Player: ${playerTerritory}`;
+            document.getElementById('enemy1-stat').textContent = `Enemy 1: ${enemy1Territory}`;
+            document.getElementById('enemy2-stat').textContent = `Enemy 2: ${enemy2Territory}`;
+            document.getElementById('enemy3-stat').textContent = `Enemy 3: ${enemy3Territory}`;
+        }
+        
+        function endGame(playerWon) {
+            gameOver = true;
+            const winnerText = document.getElementById('winner-text');
+            
+            if (playerWon) {
+                winnerText.textContent = `Victory with ${playerTerritory} territories!`;
+                winnerText.style.color = '#4CAF50';
+            } else {
+                winnerText.textContent = playerTerritory > 0 
+                    ? `Defeat! Enemies have ${enemy1Territory + enemy2Territory + enemy3Territory} territories`
+                    : `Base destroyed!`;
+                winnerText.style.color = '#F44336';
+            }
+            
+            document.getElementById('game-over').style.display = 'flex';
+        }
+        
+        function restartGame() {
+            playerTerritory = enemy1Territory = enemy2Territory = enemy3Territory = 0;
+            gameOver = false;
+            document.getElementById('game-over').style.display = 'none';
+            initializeGrid();
+        }
+        
+        window.onload = initializeGrid;
+        document.getElementById('restart-btn').addEventListener('click', restartGame);
+    </script>
+</body>
+</html>
